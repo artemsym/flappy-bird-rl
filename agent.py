@@ -100,22 +100,17 @@ class DQNAgent:
 
     def train_step(self, high_score=0):
         if high_score >= 10 and len(self.death_memory) >= 6 and len(self.memory) >= 58:
-            s1, a1, r1, ns1, d1 = self.memory.sample(58)
-            s2, a2, r2, ns2, d2 = self.death_memory.sample(6)
-            states = torch.as_tensor(s1 + s2, dtype=torch.float32, device=self.device).view(64, self.state_dim)
-            actions = torch.as_tensor(a1 + a2, dtype=torch.long, device=self.device).unsqueeze(1)
-            rewards = torch.as_tensor(r1 + r2, dtype=torch.float32, device=self.device).unsqueeze(1)
-            next_states = torch.as_tensor(ns1 + ns2, dtype=torch.float32, device=self.device).view(64, self.state_dim)
-            dones = torch.as_tensor(d1 + d2, dtype=torch.float32, device=self.device).unsqueeze(1)
+            s_b, a_b, r_b, ns_b, d_b = self.memory.sample_bytes(58, self.death_memory, 6)
         else:
             if len(self.memory) < self.batch_size:
                 return None
-            s, a, r, ns, d = self.memory.sample(self.batch_size)
-            states = torch.as_tensor(s, dtype=torch.float32, device=self.device).view(self.batch_size, self.state_dim)
-            actions = torch.as_tensor(a, dtype=torch.long, device=self.device).unsqueeze(1)
-            rewards = torch.as_tensor(r, dtype=torch.float32, device=self.device).unsqueeze(1)
-            next_states = torch.as_tensor(ns, dtype=torch.float32, device=self.device).view(self.batch_size, self.state_dim)
-            dones = torch.as_tensor(d, dtype=torch.float32, device=self.device).unsqueeze(1)
+            s_b, a_b, r_b, ns_b, d_b = self.memory.sample_bytes(self.batch_size)
+
+        states = torch.frombuffer(s_b, dtype=torch.float32).view(self.batch_size, self.state_dim).to(self.device, non_blocking=True)
+        actions = torch.frombuffer(a_b, dtype=torch.int64).unsqueeze(1).to(self.device, non_blocking=True)
+        rewards = torch.frombuffer(r_b, dtype=torch.float32).unsqueeze(1).to(self.device, non_blocking=True)
+        next_states = torch.frombuffer(ns_b, dtype=torch.float32).view(self.batch_size, self.state_dim).to(self.device, non_blocking=True)
+        dones = torch.frombuffer(d_b, dtype=torch.float32).unsqueeze(1).to(self.device, non_blocking=True)
 
         current_q = self.q_net(states).gather(1, actions)
 

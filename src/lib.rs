@@ -356,6 +356,93 @@ impl RustReplayBuffer {
         self.size
     }
 
+    #[pyo3(signature = (normal_count, death_buffer=None, death_count=0))]
+    pub fn sample_bytes<'py>(
+        &self,
+        py: Python<'py>,
+        normal_count: usize,
+        death_buffer: Option<&RustReplayBuffer>,
+        death_count: usize,
+    ) -> (
+        Bound<'py, pyo3::types::PyByteArray>,
+        Bound<'py, pyo3::types::PyByteArray>,
+        Bound<'py, pyo3::types::PyByteArray>,
+        Bound<'py, pyo3::types::PyByteArray>,
+        Bound<'py, pyo3::types::PyByteArray>,
+    ) {
+        let total_count = normal_count + death_count;
+        let mut rng = rand::thread_rng();
+
+        let mut out_states = Vec::with_capacity(total_count * self.state_dim);
+        let mut out_actions = Vec::with_capacity(total_count);
+        let mut out_rewards = Vec::with_capacity(total_count);
+        let mut out_next_states = Vec::with_capacity(total_count * self.state_dim);
+        let mut out_dones = Vec::with_capacity(total_count);
+
+        for _ in 0..normal_count {
+            let idx = rng.gen_range(0..self.size);
+            let s_offset = idx * self.state_dim;
+            out_states.extend_from_slice(&self.states[s_offset..s_offset + self.state_dim]);
+            out_next_states.extend_from_slice(&self.next_states[s_offset..s_offset + self.state_dim]);
+            out_actions.push(self.actions[idx]);
+            out_rewards.push(self.rewards[idx]);
+            out_dones.push(self.dones[idx]);
+        }
+
+        if let Some(db) = death_buffer {
+            if db.size > 0 && death_count > 0 {
+                for _ in 0..death_count {
+                    let idx = rng.gen_range(0..db.size);
+                    let s_offset = idx * db.state_dim;
+                    out_states.extend_from_slice(&db.states[s_offset..s_offset + db.state_dim]);
+                    out_next_states.extend_from_slice(&db.next_states[s_offset..s_offset + db.state_dim]);
+                    out_actions.push(db.actions[idx]);
+                    out_rewards.push(db.rewards[idx]);
+                    out_dones.push(db.dones[idx]);
+                }
+            }
+        }
+
+        let s_bytes = unsafe {
+            std::slice::from_raw_parts(
+                out_states.as_ptr() as *const u8,
+                out_states.len() * std::mem::size_of::<f32>(),
+            )
+        };
+        let a_bytes = unsafe {
+            std::slice::from_raw_parts(
+                out_actions.as_ptr() as *const u8,
+                out_actions.len() * std::mem::size_of::<i64>(),
+            )
+        };
+        let r_bytes = unsafe {
+            std::slice::from_raw_parts(
+                out_rewards.as_ptr() as *const u8,
+                out_rewards.len() * std::mem::size_of::<f32>(),
+            )
+        };
+        let ns_bytes = unsafe {
+            std::slice::from_raw_parts(
+                out_next_states.as_ptr() as *const u8,
+                out_next_states.len() * std::mem::size_of::<f32>(),
+            )
+        };
+        let d_bytes = unsafe {
+            std::slice::from_raw_parts(
+                out_dones.as_ptr() as *const u8,
+                out_dones.len() * std::mem::size_of::<f32>(),
+            )
+        };
+
+        (
+            pyo3::types::PyByteArray::new(py, s_bytes),
+            pyo3::types::PyByteArray::new(py, a_bytes),
+            pyo3::types::PyByteArray::new(py, r_bytes),
+            pyo3::types::PyByteArray::new(py, ns_bytes),
+            pyo3::types::PyByteArray::new(py, d_bytes),
+        )
+    }
+
     pub fn sample(&self, batch_size: usize) -> (Vec<f32>, Vec<i64>, Vec<f32>, Vec<f32>, Vec<f32>) {
         let mut rng = rand::thread_rng();
         let mut out_states = Vec::with_capacity(batch_size * self.state_dim);
