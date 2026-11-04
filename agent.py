@@ -55,6 +55,9 @@ class DQNAgent:
         self.criterion = nn.SmoothL1Loss()
         self.memory = RustReplayBuffer(50000, state_dim)
         self.death_memory = RustReplayBuffer(2000, state_dim)
+        self.best_memory = RustReplayBuffer(10000, state_dim)
+        self.prev_best_memory = RustReplayBuffer(10000, state_dim)
+        self.best_raw_trajectory = []
 
         self.epsilon = 1.0
         self.epsilon_min = 0.0
@@ -89,6 +92,18 @@ class DQNAgent:
         if done:
             self.death_memory.push(state, action, reward, next_state, done)
 
+    def update_best_trajectory(self, trajectory):
+        # Предыдущий рекорд переносим в prev_best_memory, чтобы сохранялись разные хайскоры
+        if self.best_raw_trajectory:
+            self.prev_best_memory.clear()
+            for step in self.best_raw_trajectory:
+                self.prev_best_memory.push(*step)
+
+        self.best_raw_trajectory = list(trajectory)
+        self.best_memory.clear()
+        for step in trajectory:
+            self.best_memory.push(*step)
+
     def select_action(self, state, eval_mode=False):
         if not eval_mode and random.random() < self.epsilon:
             return random.randint(0, self.action_dim - 1)
@@ -99,7 +114,15 @@ class DQNAgent:
             return int(torch.argmax(q_values).item())
 
     def train_step(self, high_score=0):
-        if high_score >= 10 and len(self.death_memory) >= 6 and len(self.memory) >= 58:
+        # 64 батч:
+        # Если есть оба хайскора: 42 обычные, 10 текущий HS, 6 прошлый HS, 6 смерти (всего 64)
+        if high_score >= 10 and len(self.best_memory) >= 10 and len(self.prev_best_memory) >= 6 and len(self.death_memory) >= 6 and len(self.memory) >= 42:
+            s_b, a_b, r_b, ns_b, d_b = self.memory.sample_bytes(
+                42, self.death_memory, 6, self.best_memory, 10, self.prev_best_memory, 6
+            )
+        elif high_score >= 10 and len(self.best_memory) >= 16 and len(self.death_memory) >= 6 and len(self.memory) >= 42:
+            s_b, a_b, r_b, ns_b, d_b = self.memory.sample_bytes(42, self.death_memory, 6, self.best_memory, 16)
+        elif high_score >= 10 and len(self.death_memory) >= 6 and len(self.memory) >= 58:
             s_b, a_b, r_b, ns_b, d_b = self.memory.sample_bytes(58, self.death_memory, 6)
         else:
             if len(self.memory) < self.batch_size:

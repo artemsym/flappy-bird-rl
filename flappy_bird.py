@@ -14,10 +14,10 @@ sub_ticks = 4
 dt = 1.0 / sub_ticks
 
 initial_pipe_speed = 1.0
-max_pipe_speed = 2.0
-initial_pipe_gap = 28
-min_pipe_gap = 7
-max_difficulty_score = 100
+max_pipe_speed = 1.0
+initial_pipe_gap = 28.0
+min_pipe_gap = 6.2
+max_difficulty_score = 15.0
 
 scale = 5
 window_width = int(screen_width * scale)
@@ -65,9 +65,9 @@ class Pipe:
         if gap_y is not None:
             self.gap_y = float(gap_y)
         else:
-            min_y = 2
-            max_y = max(min_y, screen_height - self.gap - 2)
-            self.gap_y = float(random.randint(min_y, max_y))
+            min_y = 2.0
+            max_y = max(min_y, screen_height - self.gap - 2.0)
+            self.gap_y = random.uniform(min_y, max_y)
 
         self.top_rect = pygame.Rect(int(self.x), 0, int(self.width), int(self.gap_y))
         bottom_height = screen_height - int(self.gap_y + self.gap)
@@ -101,8 +101,8 @@ class PipeManager:
 
     def update_difficulty(self, score):
         progress = min(1.0, score / max_difficulty_score)
-        self.gap = int(initial_pipe_gap - progress * (initial_pipe_gap - min_pipe_gap))
-        self.speed = round(initial_pipe_speed + progress * (max_pipe_speed - initial_pipe_speed), 2)
+        self.gap = initial_pipe_gap - progress * (initial_pipe_gap - min_pipe_gap)
+        self.speed = initial_pipe_speed
 
     def sub_step(self, score=0, dt_val=dt):
         self.update_difficulty(score)
@@ -122,8 +122,8 @@ class PipeManager:
                     for _ in range(substeps):
                         v += gravity * dt
                         max_fall += v * dt
-                    allowed_down = max_fall * 0.85
-                    allowed_up = 45.0
+                    allowed_down = min(20.0, max_fall * 0.75)
+                    allowed_up = 20.0
                     low = max(min_y, int(last_gap - allowed_up))
                     high = min(max_y, int(last_gap + allowed_down))
                     gap_y = random.randint(low, high) if low <= high else min(low, max_y)

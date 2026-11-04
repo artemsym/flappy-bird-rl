@@ -8,3 +8,6 @@ core.*
 *.so
 replays/
 checkpoints/
+backup/
+backup_classic/
+

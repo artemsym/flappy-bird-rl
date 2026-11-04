@@ -15,10 +15,10 @@ const SUB_TICKS: usize = 4;
 const DT: f32 = 1.0 / 4.0;
 
 const INITIAL_PIPE_SPEED: f32 = 1.0;
-const MAX_PIPE_SPEED: f32 = 2.0;
+const MAX_PIPE_SPEED: f32 = 1.0;
 const INITIAL_PIPE_GAP: f32 = 28.0;
-const MIN_PIPE_GAP: f32 = 7.0;
-const MAX_DIFFICULTY_SCORE: f32 = 100.0;
+const MIN_PIPE_GAP: f32 = 6.2;
+const MAX_DIFFICULTY_SCORE: f32 = 15.0;
 
 #[derive(Clone, Copy)]
 struct Bird {
@@ -140,8 +140,8 @@ impl PipeManager {
                     max_fall += v * DT;
                 }
 
-                let allowed_down = max_fall * 0.85;
-                let allowed_up = 45.0;
+                let allowed_down = (max_fall * 0.75).min(20.0);
+                let allowed_up = 20.0;
 
                 let low = (last_pipe.gap_y - allowed_up).max(min_y);
                 let high = (last_pipe.gap_y + allowed_down).min(max_y);
@@ -172,8 +172,8 @@ impl PipeManager {
 
     fn update_difficulty(&mut self, score: i32) {
         let progress = (score as f32 / MAX_DIFFICULTY_SCORE).min(1.0);
-        self.gap = (INITIAL_PIPE_GAP - progress * (INITIAL_PIPE_GAP - MIN_PIPE_GAP)).floor();
-        self.speed = INITIAL_PIPE_SPEED + progress * (MAX_PIPE_SPEED - INITIAL_PIPE_SPEED);
+        self.gap = INITIAL_PIPE_GAP - progress * (INITIAL_PIPE_GAP - MIN_PIPE_GAP);
+        self.speed = INITIAL_PIPE_SPEED;
     }
 
     fn sub_step(&mut self, score: i32, dt: f32) {
@@ -356,13 +356,22 @@ impl RustReplayBuffer {
         self.size
     }
 
-    #[pyo3(signature = (normal_count, death_buffer=None, death_count=0))]
+    pub fn clear(&mut self) {
+        self.size = 0;
+        self.cursor = 0;
+    }
+
+    #[pyo3(signature = (normal_count, death_buffer=None, death_count=0, best_buffer=None, best_count=0, prev_best_buffer=None, prev_best_count=0))]
     pub fn sample_bytes<'py>(
         &self,
         py: Python<'py>,
         normal_count: usize,
         death_buffer: Option<&RustReplayBuffer>,
         death_count: usize,
+        best_buffer: Option<&RustReplayBuffer>,
+        best_count: usize,
+        prev_best_buffer: Option<&RustReplayBuffer>,
+        prev_best_count: usize,
     ) -> (
         Bound<'py, pyo3::types::PyByteArray>,
         Bound<'py, pyo3::types::PyByteArray>,
@@ -370,7 +379,7 @@ impl RustReplayBuffer {
         Bound<'py, pyo3::types::PyByteArray>,
         Bound<'py, pyo3::types::PyByteArray>,
     ) {
-        let total_count = normal_count + death_count;
+        let total_count = normal_count + death_count + best_count + prev_best_count;
         let mut rng = rand::thread_rng();
 
         let mut out_states = Vec::with_capacity(total_count * self.state_dim);
@@ -399,6 +408,34 @@ impl RustReplayBuffer {
                     out_actions.push(db.actions[idx]);
                     out_rewards.push(db.rewards[idx]);
                     out_dones.push(db.dones[idx]);
+                }
+            }
+        }
+
+        if let Some(bb) = best_buffer {
+            if bb.size > 0 && best_count > 0 {
+                for _ in 0..best_count {
+                    let idx = rng.gen_range(0..bb.size);
+                    let s_offset = idx * bb.state_dim;
+                    out_states.extend_from_slice(&bb.states[s_offset..s_offset + bb.state_dim]);
+                    out_next_states.extend_from_slice(&bb.next_states[s_offset..s_offset + bb.state_dim]);
+                    out_actions.push(bb.actions[idx]);
+                    out_rewards.push(bb.rewards[idx]);
+                    out_dones.push(bb.dones[idx]);
+                }
+            }
+        }
+
+        if let Some(pbb) = prev_best_buffer {
+            if pbb.size > 0 && prev_best_count > 0 {
+                for _ in 0..prev_best_count {
+                    let idx = rng.gen_range(0..pbb.size);
+                    let s_offset = idx * pbb.state_dim;
+                    out_states.extend_from_slice(&pbb.states[s_offset..s_offset + pbb.state_dim]);
+                    out_next_states.extend_from_slice(&pbb.next_states[s_offset..s_offset + pbb.state_dim]);
+                    out_actions.push(pbb.actions[idx]);
+                    out_rewards.push(pbb.rewards[idx]);
+                    out_dones.push(pbb.dones[idx]);
                 }
             }
         }

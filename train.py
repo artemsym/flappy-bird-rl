@@ -32,6 +32,7 @@ def train(episodes=1000, target_sync=10, patience=50):
         state = env.reset()
         done = False
         actions_history = []
+        episode_transitions = []
         score = 0
 
         while not done:
@@ -40,6 +41,7 @@ def train(episodes=1000, target_sync=10, patience=50):
 
             next_state, reward, done, score, _ = env.step(action)
             agent.remember(state, action, reward, next_state, done)
+            episode_transitions.append((state, action, reward, next_state, done))
             step_count += 1
             if step_count % 4 == 0:
                 agent.train_step(high_score=high_score)
@@ -67,6 +69,7 @@ def train(episodes=1000, target_sync=10, patience=50):
 
         if score > high_score:
             high_score = score
+            agent.update_best_trajectory(episode_transitions)
             with open(replays_dir / "best.json", "w") as f:
                 json.dump(replay_data, f)
 
@@ -143,12 +146,39 @@ def play(replay_target="best"):
     pygame.quit()
 
 
-def play_all():
+def play_all(filter_score=None):
     replays_dir = Path("replays")
     files = sorted(replays_dir.glob("ep_*.json"), key=lambda p: int(p.stem.split("_")[1]))
     if not files:
         print("нет реплеев для воспроизведения")
         return
+
+    # filter_score может быть:
+    # int (например 14 -> exact 14)
+    # tuple (например (12, 14) -> диапазон с 12 по 14 включительно)
+    selected_replays = []
+    for f in files:
+        try:
+            with open(f, "r") as fp:
+                data = json.load(fp)
+            sc = data.get("score", 0)
+            if filter_score is not None:
+                if isinstance(filter_score, tuple):
+                    low, high = filter_score
+                    if not (low <= sc <= high):
+                        continue
+                elif isinstance(filter_score, int):
+                    if sc != filter_score:
+                        continue
+            selected_replays.append(data)
+        except Exception:
+            pass
+
+    if not selected_replays:
+        print(f"нет реплеев под фильтр: {filter_score}")
+        return
+
+    print(f"Найдено реплеев: {len(selected_replays)}")
 
     pygame.init()
     pygame.display.set_caption("Flappy Bird")
@@ -157,9 +187,8 @@ def play_all():
     game_surface = pygame.Surface((screen_width, screen_height))
     fps_state = {"idx": 0}
 
-    for f in files:
-        with open(f, "r") as fp:
-            data = json.load(fp)
+    for data in selected_replays:
+        print(f"Воспроизведение: Эпизод {data.get('episode')}, Скор: {data.get('score')}")
         keep_running = run_replay(data, screen, clock, game_surface, fps_state)
         if not keep_running:
             break
@@ -168,8 +197,25 @@ def play_all():
 
 
 if __name__ == "__main__":
-    if "--playall" in sys.argv:
-        play_all()
+    # Проверка аргументов вида --playall14 или --playall12_14 или playall12_14
+    playall_arg = None
+    for arg in sys.argv[1:]:
+        cleaned = arg.lstrip("-")
+        if cleaned.startswith("playall"):
+            playall_arg = cleaned[len("playall"):]
+            break
+
+    if playall_arg is not None:
+        if not playall_arg:
+            play_all()
+        elif "_" in playall_arg:
+            parts = playall_arg.split("_")
+            low, high = int(parts[0]), int(parts[1])
+            play_all(filter_score=(low, high))
+        elif playall_arg.isdigit():
+            play_all(filter_score=int(playall_arg))
+        else:
+            play_all()
     elif "--play" in sys.argv:
         idx = sys.argv.index("--play")
         target = sys.argv[idx + 1] if len(sys.argv) > idx + 1 else "best"
