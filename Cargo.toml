@@ -5,8 +5,8 @@ edition = "2021"
 
 [lib]
 name = "flappy_core"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.23", features = ["extension-module"] }
 rand = "0.8"

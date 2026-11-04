@@ -545,20 +545,32 @@ def _auto_install() -> None:
     def flip(*args, **kwargs):
         nonlocal visualizer, visualizer_key
 
-        # берём объекты из __main__ лениво: на момент импорта их ещё нет
         import __main__
+        import sys
+
+        # 1. Берём активную поверхность дисплея Pygame напрямую
+        screen = pygame.display.get_surface()
+        if screen is None:
+            return original_flip(*args, **kwargs)
 
         game = vars(__main__)
-        screen = game.get("screen")
-        bird = game.get("bird")
-        pipes = game.get("pipe_manager")
+        fb = sys.modules.get("flappy_bird")
+        fb_vars = vars(fb) if fb else {}
 
-        if screen is not None and bird is not None and pipes is not None:
+        # 2. Игровые объекты: ищем в __main__ или в модуле flappy_bird
+        bird = game.get("bird") or fb_vars.get("bird")
+        pipes = game.get("pipe_manager") or fb_vars.get("pipe_manager")
+
+        if bird is not None and pipes is not None:
+            surface_w, surface_h = screen.get_size()
             try:
-                scale_x = float(game["window_width"]) / float(game["screen_width"])
-                scale_y = float(game["window_height"]) / float(game["screen_height"])
+                ww = game.get("window_width") or fb_vars.get("window_width") or surface_w
+                sw = game.get("screen_width") or fb_vars.get("screen_width") or 80.0
+                wh = game.get("window_height") or fb_vars.get("window_height") or surface_h
+                sh = game.get("screen_height") or fb_vars.get("screen_height") or 80.0
+                scale_x = float(ww) / float(sw)
+                scale_y = float(wh) / float(sh)
             except (KeyError, TypeError, ZeroDivisionError):
-                surface_w, surface_h = screen.get_size()
                 scale_x = surface_w / 80.0
                 scale_y = surface_h / 80.0
 
@@ -567,9 +579,9 @@ def _auto_install() -> None:
                 visualizer = HDVisualizer(scale_x, scale_y)
                 visualizer_key = key
 
-            score = game.get("score")
-            high_score = game.get("high_score")
-            title = game.get("hud_title")
+            score = game.get("score") if game.get("score") is not None else fb_vars.get("score")
+            high_score = game.get("high_score") if game.get("high_score") is not None else fb_vars.get("high_score")
+            title = game.get("hud_title") or fb_vars.get("hud_title")
             visualizer.draw(screen, bird, pipes, score=score, high_score=high_score, title=title)
 
         return original_flip(*args, **kwargs)

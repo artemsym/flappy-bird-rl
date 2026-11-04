@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 target/
 .DS_Store
+core.*
+*.so
+replays/
+checkpoints/
