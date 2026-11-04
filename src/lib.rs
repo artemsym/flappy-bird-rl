@@ -297,8 +297,91 @@ impl RustFlappyEnv {
     }
 }
 
+#[pyclass]
+pub struct RustReplayBuffer {
+    states: Vec<f32>,
+    actions: Vec<i64>,
+    rewards: Vec<f32>,
+    next_states: Vec<f32>,
+    dones: Vec<f32>,
+    capacity: usize,
+    size: usize,
+    cursor: usize,
+    state_dim: usize,
+}
+
+#[pymethods]
+impl RustReplayBuffer {
+    #[new]
+    #[pyo3(signature = (capacity=50000, state_dim=4))]
+    pub fn new(capacity: usize, state_dim: usize) -> Self {
+        Self {
+            states: vec![0.0; capacity * state_dim],
+            actions: vec![0; capacity],
+            rewards: vec![0.0; capacity],
+            next_states: vec![0.0; capacity * state_dim],
+            dones: vec![0.0; capacity],
+            capacity,
+            size: 0,
+            cursor: 0,
+            state_dim,
+        }
+    }
+
+    pub fn push(&mut self, state: Vec<f32>, action: i64, reward: f32, next_state: Vec<f32>, done: bool) {
+        let idx = self.cursor;
+        let s_offset = idx * self.state_dim;
+
+        for (i, val) in state.into_iter().enumerate() {
+            self.states[s_offset + i] = val;
+        }
+        for (i, val) in next_state.into_iter().enumerate() {
+            self.next_states[s_offset + i] = val;
+        }
+        self.actions[idx] = action;
+        self.rewards[idx] = reward;
+        self.dones[idx] = if done { 1.0 } else { 0.0 };
+
+        self.cursor = (self.cursor + 1) % self.capacity;
+        if self.size < self.capacity {
+            self.size += 1;
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.size
+    }
+
+    pub fn __len__(&self) -> usize {
+        self.size
+    }
+
+    pub fn sample(&self, batch_size: usize) -> (Vec<f32>, Vec<i64>, Vec<f32>, Vec<f32>, Vec<f32>) {
+        let mut rng = rand::thread_rng();
+        let mut out_states = Vec::with_capacity(batch_size * self.state_dim);
+        let mut out_actions = Vec::with_capacity(batch_size);
+        let mut out_rewards = Vec::with_capacity(batch_size);
+        let mut out_next_states = Vec::with_capacity(batch_size * self.state_dim);
+        let mut out_dones = Vec::with_capacity(batch_size);
+
+        for _ in 0..batch_size {
+            let idx = rng.gen_range(0..self.size);
+            let s_offset = idx * self.state_dim;
+
+            out_states.extend_from_slice(&self.states[s_offset..s_offset + self.state_dim]);
+            out_next_states.extend_from_slice(&self.next_states[s_offset..s_offset + self.state_dim]);
+            out_actions.push(self.actions[idx]);
+            out_rewards.push(self.rewards[idx]);
+            out_dones.push(self.dones[idx]);
+        }
+
+        (out_states, out_actions, out_rewards, out_next_states, out_dones)
+    }
+}
+
 #[pymodule]
 fn flappy_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RustFlappyEnv>()?;
+    m.add_class::<RustReplayBuffer>()?;
     Ok(())
 }
